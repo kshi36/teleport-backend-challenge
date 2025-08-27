@@ -1,0 +1,119 @@
+# Job Worker Service \- Design Document
+
+## Introduction
+
+This design document describes a prototype job worker service, which exposes functionality to run arbitrary Linux programs as jobs. Users can start, stop, query status, and get the output of a job. Users access the service via a CLI that interacts with an API provided by an HTTPS server.
+
+There are three primary components for the job worker service: library, API server, and CLI tool. The library implements the core functionality of the service, managing job lifecycles and tracking every job in the system. The API server wraps the library functionality via an HTTPS API, with endpoints for the job functions. The API endpoints will use Bearer token authentication, and all API communication will be secured over TLS. The service will follow a simple authorization scheme to allow regular users and admins different permissions for job management. The CLI tool provides a simple interface for users to make requests to the API server.
+
+## Scope
+
+The job worker service will have simplifications as a prototype.
+
+* Jobs will run directly on the server machine on demand and remain in-memory. The service will not provide scheduling of jobs.  
+* Completed jobs and outputs will be stored in-memory until the service is closed. There is no persistent storage of job logs, such as in an external database.  
+* To simplify authentication, tokens will be pre-generated and mapped to user IDs. This determines if users can access the service functions. In addition, the HTTPS connection will use a self-signed TLS certificate, and the CLI client will be configured to trust this certificate explicitly.  
+* The authorization scheme allows users to only operate on jobs started by them, while admins can operate on any job in the system. The prototype will not focus on an allow-list of commands users can run.  
+* The CLI and API server will be designed to run on the same machine running the service (localhost).
+
+## Library
+
+The library contains the logic for all job management functions. A job will be represented as a Job struct with process information and states. A Manager struct will contain a global list of Jobs, and is responsible for starting, stopping, and querying jobs.
+
+* The Job struct will contain information specific to one job, including metadata such as unique job ID, job owner, Linux program name, program arguments, PID, current status, exit code, and buffers for output. Job status transitions will be properly protected via synchronization.  
+* The Manager struct maintains every job created by the service, with proper synchronization to enable concurrent users to perform job functions. It will contain a table mapping unique job IDs to Job structs, and also maintain the job IDs associated with each user ID for authorization.   
+* A job lifecycle consists of the following states: Running, Stopped, Completed, and Failed. On process success or failure, the job will save the exit code, as well as any output or errors produced. A forcefully stopped job will have a unique status as Stopped.
+
+
+Start(program, args) → jobID
+
+* Start a new job with specified program path and program arguments.  
+* Spawn the process, update status to Running, and create a goroutine to wait to capture output/errors and exit code.   
+* On completion, goroutine will update status to either Completed or Failed.
+
+Stop(jobID)
+
+* Stop the job with specified job ID. Update status to Stopped.
+
+GetStatus(jobID) → {pid, status, exitCode}
+
+* Query status of job with specified job ID.
+
+GetOutput(jobID) → {data}
+
+* Retrieve output of job with specified job ID. If the job is successful, data from stdout is retrieved. Otherwise data from stderr is retrieved.
+
+## API
+
+The API server wraps the functionality of the job worker library. It contains endpoints to start, stop, query status, and get output of a job. The endpoint handlers will perform authentication and authorization checks for job requests. The endpoints will gracefully handle and report errors. For the prototype, API versioning is omitted for simplicity. Below is the proposed API with HTTP methods and endpoints, where actual endpoints will be served over HTTPS.
+
+### Start a job
+
+POST /jobs/start
+
+### Stop a job
+
+POST /jobs/{id}/stop
+
+### Get status of job
+
+GET /jobs/{id}
+
+### Get output of job
+
+GET /jobs/{id}/output
+
+The API endpoints will utilize JSON packets as the format for bodies of requests and responses.  
+Example:  
+POST /jobs/start  
+Request body: {“program”: “/bin/sleep”, “args”: \[5\]}  
+Response body: {“id”: “j-12345”}
+
+## CLI
+
+The CLI tool allows users to start, stop, query status, or get output of a job. These are requests sent to the API server. To run a Linux program, a user must provide the absolute path of the executable (eg. /bin/echo for echo program). The CLI will include an optional argument to specify the client with different user IDs for testing purposes (eg. \-u “user1”, \-u “admin”). The CLI will include basic input validation, such as for program not found, wrong usage, or wrong arguments.
+
+### Client Examples
+
+`jobctl start -- /bin/sleep 5`  
+`Job started with ID j-12345.`
+
+`jobctl status j-12345`  
+`ID: j-12345`  
+`PID: 88888`  
+`Status: Running`  
+`Exit code: n/a`
+
+`jobctl stop j-12345`  
+`Job with ID j-12345 stopped.`
+
+`jobctl start -- /bin/echo “hello world”`  
+`Job started with ID j-98765.`
+
+`jobctl output j-98765`  
+`Output:`  
+`hello world`
+
+## Security
+
+For the prototype, the API server will use a self-signed TLS certificate to implement the HTTPS connection. The certificate and private key pair will be pre-generated. In production, the server will use certificates issued by trusted Certificate Authorities to improve security and trust between clients and the server.
+
+### Authentication
+
+The job worker service will use HTTP Bearer token authentication to establish a trust layer between clients and servers. Users will hold access tokens, and the server will authenticate users by validating those tokens. Only users with valid tokens can perform job functions.
+
+### Authorization
+
+A simple authorization scheme will cover the API operations a user can perform. For example, users can perform job functions only for jobs started by them. An admin can perform job functions for any job present on the server.
+
+## Future Enhancements
+
+The prototype job worker service will have future enhancements to augment the service and make it production ready.
+
+* While jobs currently run in-memory, job logs will eventually be stored persistently in a database.  
+* Bearer token authentication will use an extra layer to process client credentials and validate before sending access tokens to clients.  
+* Secrets will be auto-generated and stored securely on both client-side and server-side.  
+* The server will use a TLS certificate issued by a trusted Certificate Authority.  
+* The authorization scheme allows users to operate on jobs started by them, while admins can operate on any jobs in the system. Future considerations should include an allow-list of programs on the server machine to avoid execution of sensitive programs.  
+* For scaling considerations, jobs should be distributed across multiple machines to protect against overload. Resource limits may also be employed per job.  
+* Currently running jobs may need to persist beyond server restarts for a robust service.
