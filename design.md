@@ -12,7 +12,7 @@ The job worker service will have simplifications as a prototype.
 
 * Jobs will run directly on the server machine on demand and remain in-memory. The service will not provide scheduling of jobs.  
 * Completed jobs and outputs will be stored in-memory until the service is closed. There is no persistent storage of job logs, such as in an external database.  
-* To simplify authentication, tokens will be pre-generated and mapped to user IDs. This determines if users can access the service functions. In addition, the HTTPS connection will use a self-signed TLS certificate, and the CLI client will be configured to trust this certificate explicitly.  
+* To simplify authentication, tokens will be pre-generated and mapped to user IDs. This determines if users can access the service functions. In addition, the HTTPS connection will use a self-signed TLS certificate, and the CLI client will be configured to trust this certificate explicitly. The TLS configuration will enforce TLS version 1.3 and use defaults from Go’s `crypto/tls` library for secure cipher suites.  
 * The authorization scheme allows users to only operate on jobs started by them, while admins can operate on any job in the system. The prototype will not focus on an allow-list of commands users can run.  
 * The CLI and API server will be designed to run on the same machine running the service (localhost).
 
@@ -20,10 +20,13 @@ The job worker service will have simplifications as a prototype.
 
 The library contains the logic for all job management functions. A job will be represented as a Job struct with process information and states. A Manager struct will contain a global list of Jobs, and is responsible for starting, stopping, and querying jobs.
 
-* The Job struct will contain information specific to one job, including metadata such as unique job ID, job owner, Linux program name, program arguments, PID, current status, exit code, and buffers for output. Job status transitions will be properly protected via synchronization.  
+* The Job struct will contain information specific to one job, including metadata such as unique job ID, job owner, Linux program name, program arguments, PID, current status, exit code, and buffers for output. Job IDs will be generated as UUIDv4 via the `google/uuid` library. Job status transitions will be properly protected via synchronization.  
 * The Manager struct maintains every job created by the service, with proper synchronization to enable concurrent users to perform job functions. It will contain a table mapping unique job IDs to Job structs, and also maintain the job IDs associated with each user ID for authorization.   
-* A job lifecycle consists of the following states: Running, Stopped, Completed, and Failed. On process success or failure, the job will save the exit code, as well as any output or errors produced. A forcefully stopped job will have a unique status as Stopped.
-
+* A job lifecycle consists of the following states: Running, Completed, Failed, and Stopped. All statuses will include extra information when necessary.  
+  * Running \- Job currently running.  
+  * Completed \- Job successful, normal exit code and no errors.  
+  * Failed \- Job failed. Includes varied error reports for abnormal exits, errors starting the job, or when an OS signal terminates the process.   
+  * Stopped \- Job forcefully stopped by user.
 
 Start(program, args) → jobID
 
@@ -33,41 +36,89 @@ Start(program, args) → jobID
 
 Stop(jobID)
 
-* Stop the job with specified job ID. Update status to Stopped.
+* Stop the job with specified job ID.  
+* Send a SIGKILL signal to fully stop the process. Update status to Stopped.
 
-GetStatus(jobID) → {pid, status, exitCode}
+GetStatus(jobID) → {status, exitCode}
 
 * Query status of job with specified job ID.
 
-GetOutput(jobID) → {data}
+GetOutput(jobID) → {outData, errData}
 
-* Retrieve output of job with specified job ID. If the job is successful, data from stdout is retrieved. Otherwise data from stderr is retrieved.
+* Retrieve output and errors from stdout/stderr of job with specified job ID.
 
 ## API
 
-The API server wraps the functionality of the job worker library. It contains endpoints to start, stop, query status, and get output of a job. The endpoint handlers will perform authentication and authorization checks for job requests. The endpoints will gracefully handle and report errors. For the prototype, API versioning is omitted for simplicity. Below is the proposed API with HTTP methods and endpoints, where actual endpoints will be served over HTTPS.
+The API server wraps the functionality of the job worker library. It contains endpoints to start, stop, query status, and get output of a job. The endpoint handlers will perform authentication and authorization checks for job requests. The endpoints will gracefully handle and report errors. For the prototype, API versioning is omitted for simplicity. Below is the proposed API with HTTP methods and simplified endpoints, where actual endpoints will be served over HTTPS. This includes notable headers, response codes, and JSON formats for requests and responses.
 
 ### Start a job
 
-POST /jobs/start
+POST /jobs/start  
+Authorization: Bearer \<token\>  
+Content-Type: application/json  
+Request body: {“program”: “/bin/sleep”, “args”: \[5\]}
+
+201 Created → Job successfully started  
+{“id”: “j-12345”, “error”: null}
+
+401 Unauthorized → Missing or invalid Bearer token  
+{“error”: “Error: bad authentication”}
+
+404 Not Found → Program path not found  
+{“error”: “Error: program not found”}
 
 ### Stop a job
 
-POST /jobs/{id}/stop
+POST /jobs/{id}/stop  
+Authorization: Bearer \<token\>
+
+200 OK → Job successfully stopped  
+{“id”: “j-12345”, “error”: null}
+
+401 Unauthorized → Missing or invalid Bearer token  
+{“error”: “Error: bad authentication”}
+
+403 Forbidden → User does not own the job ID, and is not admin  
+{“error”: “Error: unauthorized action”}
+
+404 Not Found → Job not found  
+{“error”: “Error: job not found”}
+
+409 Conflict → Job not running  
+{“error”: “Error: job not running”}
 
 ### Get status of job
 
-GET /jobs/{id}
+GET /jobs/{id}  
+Authorization: Bearer \<token\>
+
+200 OK → Job status retrieved  
+{“id”: “j-12345”, “status”: “Running”, “exitCode”: null, “error”: null}
+
+401 Unauthorized → Missing or invalid Bearer token  
+{“error”: “Error: bad authentication”}
+
+403 Forbidden → User does not own the job ID, and is not admin  
+{“error”: “Error: unauthorized action”}
+
+404 Not Found → Job not found  
+{“error”: “Error: job not found”}
 
 ### Get output of job
 
 GET /jobs/{id}/output
 
-The API endpoints will utilize JSON packets as the format for bodies of requests and responses.  
-Example:  
-POST /jobs/start  
-Request body: {“program”: “/bin/sleep”, “args”: \[5\]}  
-Response body: {“id”: “j-12345”}
+200 OK → Job output retrieved  
+{“id”: “j-12345”, “stdout”: \[\], “stderr”: \[\], “error”: null}
+
+401 Unauthorized → Missing or invalid Bearer token  
+{“error”: “Error: bad authentication”}
+
+403 Forbidden → User does not own the job ID, and is not admin  
+{“error”: “Error: unauthorized action”}
+
+404 Not Found → Job not found  
+{“error”: “Error: job not found”}
 
 ## CLI
 
@@ -80,7 +131,6 @@ The CLI tool allows users to start, stop, query status, or get output of a job. 
 
 `jobctl status j-12345`  
 `ID: j-12345`  
-`PID: 88888`  
 `Status: Running`  
 `Exit code: n/a`
 
@@ -96,7 +146,7 @@ The CLI tool allows users to start, stop, query status, or get output of a job. 
 
 ## Security
 
-For the prototype, the API server will use a self-signed TLS certificate to implement the HTTPS connection. The certificate and private key pair will be pre-generated. In production, the server will use certificates issued by trusted Certificate Authorities to improve security and trust between clients and the server.
+The TLS configuration for the server will follow defaults from Go’s `crypto/tls` library to provide modern secure configurations. For the prototype, TLS version will be enforced to TLS 1.3 for strongest security. In addition, the API server will use a self-signed TLS certificate to implement the HTTPS connection. The certificate and private key pair will be pre-generated. In production, the server will use certificates issued by trusted Certificate Authorities to improve security and trust between clients and the server.
 
 ### Authentication
 
