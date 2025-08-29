@@ -22,17 +22,18 @@ The library contains the logic for all job management functions. A job will be r
 
 * The Job struct will contain information specific to one job, including metadata such as unique job ID, job owner, Linux program name, program arguments, PID, current status, exit code, and buffers for output. Job IDs will be generated as UUIDv4 via the `google/uuid` library. Job status transitions will be properly protected via synchronization.  
 * The Manager struct maintains every job created by the service, with proper synchronization to enable concurrent users to perform job functions. It will contain a table mapping unique job IDs to Job structs, and also maintain the job IDs associated with each user ID for authorization.   
-* A job lifecycle consists of the following states: Running, Completed, Failed, and Stopped. All statuses will include extra information when necessary.  
-  * Running \- Job currently running.  
-  * Completed \- Job successful, normal exit code and no errors.  
-  * Failed \- Job failed. Includes varied error reports for abnormal exits, errors starting the job, or when an OS signal terminates the process.   
+* A job lifecycle consists of the following states: Starting, Running, Failed, Completed, and Stopped. All statuses will include extra information when necessary.  
+  * Starting \- Job is created and job ID assigned. Prepare to fork a new process.  
+  * Running \- Job currently running with no errors.  
+  * Failed \- Job failed, errors starting the job process.  
+  * Completed \- Job complete, with process exit code, outputs, errors saved.  
   * Stopped \- Job forcefully stopped by user.
 
 Start(program, args) → jobID
 
-* Start a new job with specified program path and program arguments.  
-* Spawn the process, update status to Running, and create a goroutine to wait to capture output/errors and exit code.   
-* On completion, goroutine will update status to either Completed or Failed.
+* Begin to start a new job with specified program path and program arguments.  
+* Create a unique job ID via UUID, and update status to Starting. Return job ID immediately.  
+* Create a new goroutine to spawn the process (cmd.Start()), update status to Running or Failed based on its return value, and wait to capture output/errors and exit code (cmd.Wait()). On process completion, update status to Completed.
 
 Stop(jobID)
 
@@ -43,7 +44,7 @@ GetStatus(jobID) → {status, exitCode}
 
 * Query status of job with specified job ID.
 
-GetOutput(jobID) → {outData, errData}
+GetOutput(jobID) → {stdout, stderr}
 
 * Retrieve output and errors from stdout/stderr of job with specified job ID.
 
@@ -62,10 +63,7 @@ Request body: {“program”: “/bin/sleep”, “args”: \[5\]}
 {“id”: “j-12345”, “error”: null}
 
 401 Unauthorized → Missing or invalid Bearer token  
-{“error”: “Error: bad authentication”}
-
-404 Not Found → Program path not found  
-{“error”: “Error: program not found”}
+{“error”: “Error: unauthorized action”}
 
 ### Stop a job
 
@@ -75,17 +73,11 @@ Authorization: Bearer \<token\>
 200 OK → Job successfully stopped  
 {“id”: “j-12345”, “error”: null}
 
-401 Unauthorized → Missing or invalid Bearer token  
-{“error”: “Error: bad authentication”}
-
-403 Forbidden → User does not own the job ID, and is not admin  
+401 Unauthorized → Missing or invalid Bearer token; or user does not own job ID (not admin)  
 {“error”: “Error: unauthorized action”}
 
 404 Not Found → Job not found  
 {“error”: “Error: job not found”}
-
-409 Conflict → Job not running  
-{“error”: “Error: job not running”}
 
 ### Get status of job
 
@@ -95,10 +87,7 @@ Authorization: Bearer \<token\>
 200 OK → Job status retrieved  
 {“id”: “j-12345”, “status”: “Running”, “exitCode”: null, “error”: null}
 
-401 Unauthorized → Missing or invalid Bearer token  
-{“error”: “Error: bad authentication”}
-
-403 Forbidden → User does not own the job ID, and is not admin  
+401 Unauthorized → Missing or invalid Bearer token; or user does not own job ID (not admin)  
 {“error”: “Error: unauthorized action”}
 
 404 Not Found → Job not found  
@@ -109,12 +98,9 @@ Authorization: Bearer \<token\>
 GET /jobs/{id}/output
 
 200 OK → Job output retrieved  
-{“id”: “j-12345”, “stdout”: \[\], “stderr”: \[\], “error”: null}
+{“id”: “j-12345”, “stdout”: “hello world”, “stderr”: “”, “error”: null}
 
-401 Unauthorized → Missing or invalid Bearer token  
-{“error”: “Error: bad authentication”}
-
-403 Forbidden → User does not own the job ID, and is not admin  
+401 Unauthorized → Missing or invalid Bearer token; or user does not own job ID (not admin)  
 {“error”: “Error: unauthorized action”}
 
 404 Not Found → Job not found  
@@ -154,7 +140,7 @@ The job worker service will use HTTP Bearer token authentication to establish a 
 
 ### Authorization
 
-A simple authorization scheme will cover the API operations a user can perform. For example, users can perform job functions only for jobs started by them. An admin can perform job functions for any job present on the server.
+A simple authorization scheme will cover the API operations a user can perform. For example, users can perform job functions only for jobs started by them. An admin can perform job functions for any job present on the server. Users will be given a regular user token or admin access token mapped to user ID to define authorized job functions. In the prototype, tokens will be pre-generated, and admin access will be baked into select tokens. The server will track valid user tokens and valid admin tokens.
 
 ## Future Enhancements
 
