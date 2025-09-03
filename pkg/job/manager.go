@@ -17,57 +17,54 @@ func NewManager() *Manager {
 	}
 }
 
+// readJob retrieves a Job if the jobID exists in the table.
+func (m *Manager) readJob(jobID string) *Job {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	return m.jobs[jobID]
+}
+
 // Start creates a job and assigns a unique job ID.
 func (m *Manager) Start(program string, args []string) string {
-	newJob := NewJob(program, args)
+	newJob := newJob(program, args)
 
 	m.mutex.Lock()
 	m.jobs[newJob.ID] = newJob
 	m.mutex.Unlock()
 
-	go newJob.Run()
+	go newJob.run()
 
 	return newJob.ID
 }
 
 // Stop kills the job of specified job ID
 func (m *Manager) Stop(jobID string) error {
-	// retrieve job
-	m.mutex.RLock()
-	job, ok := m.jobs[jobID]
-	m.mutex.RUnlock()
-
-	if !ok {
-		return ErrJobNotFound
+	job := m.readJob(jobID)
+	if job == nil {
+		return ErrNotFound
 	}
 
-	return job.Stop()
+	return job.stop()
 }
 
 // GetStatus queries the job ID and returns job status, exit code, error
 func (m *Manager) GetStatus(jobID string) (JobStatus, error) {
-	// retrieve job
-	m.mutex.RLock()
-	job, ok := m.jobs[jobID]
-	m.mutex.RUnlock()
-
-	if !ok {
-		return JobStatus{}, ErrJobNotFound
+	job := m.readJob(jobID)
+	if job == nil {
+		return JobStatus{}, ErrNotFound
 	}
 
-	return job.Status(), nil
+	return job.getStatus(), nil
 }
 
 // GetOutput queries the job ID and returns stdout, stderr.
 func (m *Manager) GetOutput(jobID string) (stdout, stderr string, err error) {
-	// retrieve job
-	m.mutex.RLock()
-	job, ok := m.jobs[jobID]
-	m.mutex.RUnlock()
-
-	if !ok {
-		return "", "", ErrJobNotFound
+	job := m.readJob(jobID)
+	if job == nil {
+		return "", "", ErrNotFound
 	}
 
-	return job.Output()
+	stdout, stderr = job.getOutput()
+	return stdout, stderr, nil
 }

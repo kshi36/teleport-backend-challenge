@@ -1,12 +1,13 @@
+// Package job implements functions to interact with jobs,
+// such as start, stop, query status, and get output of jobs.
 package job
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 
 	"github.com/google/uuid"
 )
@@ -19,12 +20,15 @@ const (
 	Stopped   = "stopped"
 )
 
+var ErrNotFound = errors.New("job not found")
+var ErrProcessNull = errors.New("job has not started the process")
+
 // Job is a Linux process started by the service.
 type Job struct {
 	ID     string
 	cmd    *exec.Cmd
-	outBuf bytes.Buffer
-	errBuf bytes.Buffer
+	outBuf safeBuffer
+	errBuf safeBuffer
 
 	status      JobStatus
 	statusMutex sync.RWMutex
@@ -34,17 +38,34 @@ type Job struct {
 type JobStatus struct {
 	State    string
 	ExitCode int
-	Error    string
+}
+
+// safeBuffer provides concurrent r/w access to buffer content
+type safeBuffer struct {
+	buf      bytes.Buffer
+	bufMutex sync.RWMutex
+}
+
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.bufMutex.Lock()
+	defer s.bufMutex.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.bufMutex.RLock()
+	defer s.bufMutex.RUnlock()
+	return s.buf.String()
 }
 
 // New creates a new Job struct with state "Starting".
-func NewJob(program string, args []string) *Job {
+func newJob(program string, args []string) *Job {
 	ID := uuid.NewString()
 
 	job := Job{
 		ID:     ID,
 		cmd:    exec.Command(program, args...),
-		status: JobStatus{State: Starting},
+		status: JobStatus{State: Starting, ExitCode: -1},
 	}
 
 	// attach stdout and stderr buffers
@@ -55,7 +76,7 @@ func NewJob(program string, args []string) *Job {
 }
 
 // Run forks a new process and manages job lifecycle.
-func (j *Job) Run() {
+func (j *Job) run() {
 	// start the process
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
@@ -63,16 +84,12 @@ func (j *Job) Run() {
 	err := j.cmd.Start()
 	// unsuccessful starting the process
 	if err != nil {
-		j.status = JobStatus{
-			State:    Failed,
-			ExitCode: -1,
-			Error:    fmt.Sprintf("process failed to start: %v", err),
-		}
+		j.status = JobStatus{State: Failed, ExitCode: -1}
 		return
 	}
 
 	// successful starting the process
-	j.status = JobStatus{State: Running}
+	j.status = JobStatus{State: Running, ExitCode: -1}
 
 	// wait for process completion
 	go j.wait()
@@ -80,52 +97,25 @@ func (j *Job) Run() {
 
 // wait sits on the process until completion, then updates state.
 func (j *Job) wait() {
-	err := j.cmd.Wait()
+	j.cmd.Wait()
 
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
 
 	exitCode := j.cmd.ProcessState.ExitCode()
 
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			// job was stopped by SIGKILL (Stopped)
-			if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-				if ws.Signaled() && ws.Signal() == syscall.SIGKILL {
-					j.status = JobStatus{
-						State:    Stopped,
-						ExitCode: -1,
-						Error:    "process killed (SIGKILL)",
-					}
-					return
-				}
-			}
-			// job exits with non-zero exit code (Completed)
-			j.status = JobStatus{
-				State:    Completed,
-				ExitCode: exitCode,
-				Error:    fmt.Sprintf("process stopped with exit code %d", exitCode),
-			}
-			return
-		}
-		// job process quit unexpectedly
-		j.status = JobStatus{
-			State:    Failed,
-			ExitCode: -1,
-			Error:    fmt.Sprintf("unexpected process error: %v", err),
-		}
+	// process terminated by signal (state "Stopped")
+	if exitCode == -1 {
+		j.status = JobStatus{State: Stopped, ExitCode: exitCode}
 		return
 	}
 
-	// job exits with exit code 0 (Completed)
-	j.status = JobStatus{
-		State:    Completed,
-		ExitCode: exitCode,
-	}
+	// process completed
+	j.status = JobStatus{State: Completed, ExitCode: exitCode}
 }
 
 // Stop kills the job process with signal SIGKILL.
-func (j *Job) Stop() error {
+func (j *Job) stop() error {
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
 
@@ -136,12 +126,12 @@ func (j *Job) Stop() error {
 
 	// job process still starting
 	if j.cmd.Process == nil {
-		return ErrJobProcessNull
+		return ErrProcessNull
 	}
 
 	// send SIGKILL signal
 	err := j.cmd.Process.Kill()
-	if err != nil && err != os.ErrProcessDone {
+	if err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 
@@ -149,7 +139,7 @@ func (j *Job) Stop() error {
 }
 
 // Status returns the job's status, exit code, and errors
-func (j *Job) Status() JobStatus {
+func (j *Job) getStatus() JobStatus {
 	j.statusMutex.RLock()
 	defer j.statusMutex.RUnlock()
 
@@ -157,15 +147,6 @@ func (j *Job) Status() JobStatus {
 }
 
 // Output returns the job's stdout/stderr data
-func (j *Job) Output() (stdout, stderr string, err error) {
-	j.statusMutex.RLock()
-	defer j.statusMutex.RUnlock()
-
-	// only return data when process is completed
-	// in the future, data should be streamed and retrievable while running
-	if j.status.State != Completed {
-		return "", "", ErrJobNotCompleted
-	}
-
-	return j.outBuf.String(), j.errBuf.String(), nil
+func (j *Job) getOutput() (stdout, stderr string) {
+	return j.outBuf.String(), j.errBuf.String()
 }
