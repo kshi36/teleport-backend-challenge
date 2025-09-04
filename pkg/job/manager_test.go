@@ -24,9 +24,9 @@ func TestStartShort(t *testing.T) {
 		t.Errorf("GetStatus() error: %s", err.Error())
 	}
 
-	if status.State != Completed || status.ExitCode != 0 {
+	if status.State != Completed || *status.ExitCode != 0 {
 		t.Errorf("GetStatus() expected completed w/ exit code 0, got %v, code %v",
-			status.State, status.ExitCode)
+			status.State, *status.ExitCode)
 	}
 
 	// get output
@@ -62,9 +62,9 @@ func TestStartLong(t *testing.T) {
 	if err != nil {
 		t.Errorf("GetStatus() error: %s", err.Error())
 	}
-	if status.State != Completed || status.ExitCode != 0 {
+	if status.State != Completed || *status.ExitCode != 0 {
 		t.Errorf("GetStatus() expected completed w/ exit code 0, got %v, code %v",
-			status.State, status.ExitCode)
+			status.State, *status.ExitCode)
 	}
 }
 
@@ -97,9 +97,9 @@ func TestNonZeroExit(t *testing.T) {
 		t.Errorf("GetStatus() error: %s", err.Error())
 	}
 
-	if status.State != Completed || status.ExitCode != 1 {
+	if status.State != Completed || *status.ExitCode != 1 {
 		t.Errorf("GetStatus() expected completed w/ exit code 1, got %v, code %v",
-			status.State, status.ExitCode)
+			status.State, *status.ExitCode)
 	}
 }
 

@@ -38,7 +38,7 @@ func (m *Manager) Start(program string, args []string) string {
 	return newJob.ID
 }
 
-// Stop kills the job of specified job ID
+// Stop kills the job of specified job ID.
 func (m *Manager) Stop(jobID string) error {
 	job := m.readJob(jobID)
 	if job == nil {
@@ -48,7 +48,7 @@ func (m *Manager) Stop(jobID string) error {
 	return job.stop()
 }
 
-// GetStatus queries the job ID and returns job status, exit code, error
+// GetStatus queries the job ID and returns job status, exit code.
 func (m *Manager) GetStatus(jobID string) (JobStatus, error) {
 	job := m.readJob(jobID)
 	if job == nil {

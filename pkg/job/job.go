@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Job lifecycle
 const (
 	Starting  = "starting"
 	Running   = "running"
@@ -37,10 +38,11 @@ type Job struct {
 // JobStatus holds job status information.
 type JobStatus struct {
 	State    string
-	ExitCode int
+	ExitCode *int
 }
 
-// safeBuffer provides concurrent r/w access to buffer content
+// safeBuffer provides concurrent r/w access to buffer content.
+// This allows safe access to process's stdout/stderr while job is running.
 type safeBuffer struct {
 	buf      bytes.Buffer
 	bufMutex sync.RWMutex
@@ -58,14 +60,14 @@ func (s *safeBuffer) String() string {
 	return s.buf.String()
 }
 
-// New creates a new Job struct with state "Starting".
+// newJob creates a new Job struct with state "Starting".
 func newJob(program string, args []string) *Job {
 	ID := uuid.NewString()
 
 	job := Job{
 		ID:     ID,
 		cmd:    exec.Command(program, args...),
-		status: JobStatus{State: Starting, ExitCode: -1},
+		status: JobStatus{State: Starting},
 	}
 
 	// attach stdout and stderr buffers
@@ -75,7 +77,7 @@ func newJob(program string, args []string) *Job {
 	return &job
 }
 
-// Run forks a new process and manages job lifecycle.
+// run forks a new process and manages job lifecycle.
 func (j *Job) run() {
 	// start the process
 	j.statusMutex.Lock()
@@ -84,12 +86,12 @@ func (j *Job) run() {
 	err := j.cmd.Start()
 	// unsuccessful starting the process
 	if err != nil {
-		j.status = JobStatus{State: Failed, ExitCode: -1}
+		j.status = JobStatus{State: Failed}
 		return
 	}
 
 	// successful starting the process
-	j.status = JobStatus{State: Running, ExitCode: -1}
+	j.status = JobStatus{State: Running}
 
 	// wait for process completion
 	go j.wait()
@@ -106,15 +108,15 @@ func (j *Job) wait() {
 
 	// process terminated by signal (state "Stopped")
 	if exitCode == -1 {
-		j.status = JobStatus{State: Stopped, ExitCode: exitCode}
+		j.status = JobStatus{State: Stopped, ExitCode: &exitCode}
 		return
 	}
 
 	// process completed
-	j.status = JobStatus{State: Completed, ExitCode: exitCode}
+	j.status = JobStatus{State: Completed, ExitCode: &exitCode}
 }
 
-// Stop kills the job process with signal SIGKILL.
+// stop kills the job process with signal SIGKILL.
 func (j *Job) stop() error {
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
@@ -138,7 +140,7 @@ func (j *Job) stop() error {
 	return nil
 }
 
-// Status returns the job's status, exit code, and errors
+// getStatus returns the job's status and exit code.
 func (j *Job) getStatus() JobStatus {
 	j.statusMutex.RLock()
 	defer j.statusMutex.RUnlock()
@@ -146,7 +148,7 @@ func (j *Job) getStatus() JobStatus {
 	return j.status
 }
 
-// Output returns the job's stdout/stderr data
+// getOutput returns the job's stdout/stderr data.
 func (j *Job) getOutput() (stdout, stderr string) {
 	return j.outBuf.String(), j.errBuf.String()
 }
