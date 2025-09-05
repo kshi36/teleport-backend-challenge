@@ -22,7 +22,6 @@ const (
 )
 
 var ErrNotFound = errors.New("job not found")
-var ErrProcessNull = errors.New("job has not started the process")
 
 // Job is a Linux process started by the service.
 type Job struct {
@@ -126,9 +125,9 @@ func (j *Job) stop() error {
 		return nil
 	}
 
-	// job process still starting
+	// job process still starting, coalesce into ErrNotFound
 	if j.cmd.Process == nil {
-		return ErrProcessNull
+		return ErrNotFound
 	}
 
 	// send SIGKILL signal

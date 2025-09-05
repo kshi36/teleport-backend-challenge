@@ -1,0 +1,36 @@
+// Package jobserver defines the HTTPS API handlers,
+// including middleware for Bearer token authentication & authorization.
+package jobserver
+
+import (
+	"net/http"
+	"teleport-jobworker/pkg/job"
+)
+
+// Server provides an HTTP mux and job.Manager for job API calls.
+type Server struct {
+	mux *http.ServeMux
+	mgr *job.Manager
+}
+
+// NewServer creates an HTTP mux with API endpoints for job functions.
+func NewServer(mgr *job.Manager) *Server {
+	mux := http.NewServeMux()
+
+	js := &Server{
+		mux: mux,
+		mgr: mgr,
+	}
+
+	mux.HandleFunc("POST /jobs/start", bearerAuth(js.startHandler))
+	mux.HandleFunc("POST /jobs/{id}/stop", bearerAuth(js.stopHandler))
+	mux.HandleFunc("GET /jobs/{id}/output", bearerAuth(js.getOutputHandler))
+	mux.HandleFunc("GET /jobs/{id}", bearerAuth(js.getStatusHandler))
+
+	return js
+}
+
+// ServeHTTP allows the job Server to be used with http.Server.
+func (js *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	js.mux.ServeHTTP(w, r)
+}
