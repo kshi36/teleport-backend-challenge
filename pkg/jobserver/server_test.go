@@ -1,0 +1,204 @@
+package jobserver
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"teleport-jobworker/pkg/job"
+	"testing"
+	"testing/synctest"
+)
+
+const (
+	user1    = "user1"
+	user2    = "user2"
+	fakeuser = "fakeuser"
+)
+
+// initTestServer spins up a test HTTPS API server and pre-generated dummy ID for testing.
+func initTestServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+
+	manager := job.NewManager()
+	jobServer := NewServer(manager)
+
+	var id string
+	synctest.Test(t, func(t *testing.T) {
+		// pre-populate Manager with a dummy Job, ID to test endpoints
+		ctx := job.WithUserInfo(context.Background(), user1, job.User)
+		id = manager.Start(ctx, "/bin/echo", []string{"hello world"})
+
+		// wait for dummy Job to be in "completed" state
+		synctest.Wait()
+	})
+
+	ts := httptest.NewUnstartedServer(jobServer)
+	ts.TLS = &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
+	ts.StartTLS()
+
+	return ts, id
+}
+
+func TestStartHandler(t *testing.T) {
+	ts, _ := initTestServer(t)
+	defer ts.Close()
+
+	shortCmd := `{"program":"/bin/echo","args":["hello world"]}`
+	request, _ := http.NewRequest("POST", ts.URL+"/jobs/start", bytes.NewBufferString(shortCmd))
+	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Errorf("startHandler() expected %d, got %d", http.StatusCreated, response.StatusCode)
+	}
+	defer response.Body.Close()
+}
+
+func TestStopHandler(t *testing.T) {
+	ts, id := initTestServer(t)
+	defer ts.Close()
+
+	request, _ := http.NewRequest("POST", ts.URL+"/jobs/"+id+"/stop", nil)
+	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("stopHandler() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Errorf("stopHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
+	}
+	defer response.Body.Close()
+}
+
+func TestStatusHandler(t *testing.T) {
+	ts, id := initTestServer(t)
+	defer ts.Close()
+
+	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
+	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Errorf("getStatusHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
+	}
+	defer response.Body.Close()
+
+	var statusResponse StatusResponse
+	err = json.NewDecoder(response.Body).Decode(&statusResponse)
+	if err != nil {
+		t.Errorf("JSON decoding error: %s", err.Error())
+	}
+
+	if statusResponse.Status != job.Completed {
+		t.Errorf("GetStatus() expected completed, got %v", statusResponse.Status)
+	}
+}
+
+func TestOutputHandler(t *testing.T) {
+	ts, id := initTestServer(t)
+	defer ts.Close()
+
+	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id+"/output", nil)
+	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Errorf("getOutputHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
+	}
+	defer response.Body.Close()
+}
+
+func TestJobNotFound(t *testing.T) {
+	ts, _ := initTestServer(t)
+	defer ts.Close()
+
+	// GetStatus requestuest, with fake id of a job that doesn't exist
+	request, _ := http.NewRequest("GET", ts.URL+"/jobs/fake_id", nil)
+	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusNotFound {
+		t.Errorf("getStatusHandler() expected %d, got %d", http.StatusNotFound, response.StatusCode)
+	}
+	defer response.Body.Close()
+
+	var statusResponse StatusResponse
+	err = json.NewDecoder(response.Body).Decode(&statusResponse)
+	if err != nil {
+		t.Errorf("JSON decoding error: %s", err.Error())
+	}
+
+	if *statusResponse.Error != job.ErrNotFound.Error() {
+		t.Errorf("GetStatus() expected error: %v, got %v", job.ErrNotFound.Error(), *statusResponse.Error)
+	}
+}
+
+func TestWrongUserNotFound(t *testing.T) {
+	ts, id := initTestServer(t)
+	defer ts.Close()
+
+	// GetStatus requestuest, with wrong user (user2)
+	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
+	request.Header.Set("Authorization", "Bearer "+user2)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusNotFound {
+		t.Errorf("getStatusHandler() expected %d, got %d", http.StatusNotFound, response.StatusCode)
+	}
+	defer response.Body.Close()
+
+	var statusResponse StatusResponse
+	err = json.NewDecoder(response.Body).Decode(&statusResponse)
+	if err != nil {
+		t.Errorf("JSON decoding error: %s", err.Error())
+	}
+
+	if *statusResponse.Error != job.ErrNotFound.Error() {
+		t.Errorf("GetStatus() expected error: %v, got %v", job.ErrNotFound.Error(), *statusResponse.Error)
+	}
+}
+
+func TestUnauthorized(t *testing.T) {
+	ts, id := initTestServer(t)
+	defer ts.Close()
+
+	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
+	request.Header.Set("Authorization", "Bearer "+fakeuser)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := ts.Client().Do(request)
+	if err != nil {
+		t.Errorf("Do() error: %s", err.Error())
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Errorf("startHandler() expected %d, got %d", http.StatusUnauthorized, response.StatusCode)
+	}
+	defer response.Body.Close()
+}

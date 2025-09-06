@@ -22,7 +22,6 @@ const (
 )
 
 var ErrNotFound = errors.New("job not found")
-var ErrProcessNull = errors.New("job has not started the process")
 
 // Job is a Linux process started by the service.
 type Job struct {
@@ -70,7 +69,6 @@ func newJob(program string, args []string) *Job {
 		status: JobStatus{State: Starting},
 	}
 
-	// attach stdout and stderr buffers
 	job.cmd.Stdout = &job.outBuf
 	job.cmd.Stderr = &job.errBuf
 
@@ -79,7 +77,6 @@ func newJob(program string, args []string) *Job {
 
 // run forks a new process and manages job lifecycle.
 func (j *Job) run() {
-	// start the process
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
 
@@ -93,7 +90,7 @@ func (j *Job) run() {
 	// successful starting the process
 	j.status = JobStatus{State: Running}
 
-	// wait for process completion
+	// wait for process completion to update job state
 	go j.wait()
 }
 
@@ -104,15 +101,13 @@ func (j *Job) wait() {
 	j.statusMutex.Lock()
 	defer j.statusMutex.Unlock()
 
+	// update job state according to exit code
 	exitCode := j.cmd.ProcessState.ExitCode()
-
-	// process terminated by signal (state "Stopped")
 	if exitCode == -1 {
 		j.status = JobStatus{State: Stopped, ExitCode: &exitCode}
 		return
 	}
 
-	// process completed
 	j.status = JobStatus{State: Completed, ExitCode: &exitCode}
 }
 
@@ -126,9 +121,9 @@ func (j *Job) stop() error {
 		return nil
 	}
 
-	// job process still starting
+	// job process still starting, coalesce into ErrNotFound
 	if j.cmd.Process == nil {
-		return ErrProcessNull
+		return ErrNotFound
 	}
 
 	// send SIGKILL signal
