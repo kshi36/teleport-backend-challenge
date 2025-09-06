@@ -2,101 +2,108 @@ package jobserver
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"teleport-jobworker/pkg/job"
 )
 
-// StartReq defines the Start request body.
-type StartReq struct {
+// StartRequest defines the Start request body.
+type StartRequest struct {
 	Program string   `json:"program"`
 	Args    []string `json:"args"`
 }
 
-// SimpleRes defines the Start and Stop response body.
-type SimpleRes struct {
+// StartResponse defines the Start response body.
+type StartResponse struct {
 	ID    string  `json:"id"`
 	Error *string `json:"error"`
 }
 
-// StatusRes defines the GetStatus response body.
-type StatusRes struct {
+// StopResponse defines the Stop response body.
+type StopResponse struct {
+	ID    string  `json:"id"`
+	Error *string `json:"error"`
+}
+
+// StatusResponse defines the GetStatus response body.
+type StatusResponse struct {
 	ID       string  `json:"id"`
 	Status   string  `json:"status"`
 	ExitCode *int    `json:"exitCode"`
 	Error    *string `json:"error"`
 }
 
-// OutputRes defines the GetOutput response body.
-type OutputRes struct {
+// OutputResponse defines the GetOutput response body.
+type OutputResponse struct {
 	ID     string  `json:"id"`
 	Stdout string  `json:"stdout"`
 	Stderr string  `json:"stderr"`
 	Error  *string `json:"error"`
 }
 
-// ErrRes defines error response body for status codes: 401, 404, 500.
-type ErrRes struct {
+// ErrorResponse defines error response body for status codes: 401, 404, 500.
+type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// resJSON prepares the response body as JSON.
-func resJSON(w http.ResponseWriter, payload any, code int) {
+// responseJSON prepares the response body as JSON.
+func responseJSON(w http.ResponseWriter, payload any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(payload)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		log.Printf("json.Encoder.Encode() failed to encode response: %v", err)
+	}
 }
 
-// resError prepares the error response body as JSON.
-func resError(w http.ResponseWriter, err error) {
-	// 404 Not Found
+// responseError prepares the error response body as JSON.
+func responseError(w http.ResponseWriter, err error) {
+	// 404 Not Found, when a job is not in Manager's job table
 	if err == job.ErrNotFound {
-		resJSON(w, ErrRes{err.Error()}, http.StatusNotFound)
+		responseJSON(w, ErrorResponse{err.Error()}, http.StatusNotFound)
 		return
 	}
-	// 500 Internal Server Error
-	resJSON(w, ErrRes{err.Error()}, http.StatusInternalServerError)
+	// 500 Internal Server Error, for any issues with internal job functions
+	responseJSON(w, ErrorResponse{err.Error()}, http.StatusInternalServerError)
 }
 
 // startHandler handles HTTPS requests to POST /jobs/start
 func (s *Server) startHandler(w http.ResponseWriter, r *http.Request) {
-	var req StartReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		resJSON(w, ErrRes{err.Error()}, http.StatusBadRequest)
+	var startRequest StartRequest
+	if err := json.NewDecoder(r.Body).Decode(&startRequest); err != nil {
+		responseJSON(w, ErrorResponse{err.Error()}, http.StatusBadRequest)
 		return
 	}
 
-	// Start call
-	jobID := s.mgr.Start(r.Context(), req.Program, req.Args)
+	jobID := s.manager.Start(r.Context(), startRequest.Program, startRequest.Args)
 
-	resJSON(w, SimpleRes{ID: jobID}, http.StatusCreated)
+	responseJSON(w, StartResponse{ID: jobID}, http.StatusCreated)
 }
 
 // stopHandler handles HTTPS reqs to POST /jobs/{id}/stop
 func (s *Server) stopHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// Stop call
-	err := s.mgr.Stop(r.Context(), id)
+	err := s.manager.Stop(r.Context(), id)
 	if err != nil {
-		resError(w, err)
+		responseError(w, err)
 		return
 	}
 
-	resJSON(w, SimpleRes{ID: id}, http.StatusOK)
+	responseJSON(w, StopResponse{ID: id}, http.StatusOK)
 }
 
 // getStatusHandler handles HTTPS reqs to GET /jobs/{id}
 func (s *Server) getStatusHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// GetStatus call
-	status, err := s.mgr.GetStatus(r.Context(), id)
+	status, err := s.manager.GetStatus(r.Context(), id)
 	if err != nil {
-		resError(w, err)
+		responseError(w, err)
 		return
 	}
 
-	resJSON(w, StatusRes{
+	responseJSON(w, StatusResponse{
 		ID:       id,
 		Status:   status.State,
 		ExitCode: status.ExitCode,
@@ -107,14 +114,13 @@ func (s *Server) getStatusHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getOutputHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// GetOutput call
-	stdout, stderr, err := s.mgr.GetOutput(r.Context(), id)
+	stdout, stderr, err := s.manager.GetOutput(r.Context(), id)
 	if err != nil {
-		resError(w, err)
+		responseError(w, err)
 		return
 	}
 
-	resJSON(w, OutputRes{
+	responseJSON(w, OutputResponse{
 		ID:     id,
 		Stdout: stdout,
 		Stderr: stderr,

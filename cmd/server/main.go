@@ -13,14 +13,14 @@ func main() {
 	// for now, just use localhost, port 8443
 	addr := ":8443"
 
-	// create new Manager
-	mgr := job.NewManager()
+	// create new Manager to inject into job Server
+	manager := job.NewManager()
 
-	// create job Server with mux
-	js := jobserver.NewServer(mgr)
+	// create job Server with mux to use with HTTPS
+	jobServer := jobserver.NewServer(manager)
 	server := &http.Server{
 		Addr:    addr,
-		Handler: js,
+		Handler: jobServer,
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13, // enforce TLS 1.3
 		},

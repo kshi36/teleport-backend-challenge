@@ -9,25 +9,25 @@ import (
 
 // Server provides an HTTP mux and job.Manager for job API calls.
 type Server struct {
-	mux *http.ServeMux
-	mgr *job.Manager
+	mux     *http.ServeMux
+	manager *job.Manager
 }
 
 // NewServer creates an HTTP mux with API endpoints for job functions.
-func NewServer(mgr *job.Manager) *Server {
+func NewServer(manager *job.Manager) *Server {
 	mux := http.NewServeMux()
 
-	js := &Server{
-		mux: mux,
-		mgr: mgr,
+	jobServer := &Server{
+		mux:     mux,
+		manager: manager,
 	}
 
-	mux.HandleFunc("POST /jobs/start", bearerAuth(js.startHandler))
-	mux.HandleFunc("POST /jobs/{id}/stop", bearerAuth(js.stopHandler))
-	mux.HandleFunc("GET /jobs/{id}/output", bearerAuth(js.getOutputHandler))
-	mux.HandleFunc("GET /jobs/{id}", bearerAuth(js.getStatusHandler))
+	mux.HandleFunc("POST /jobs/start", bearerAuth(jobServer.startHandler))
+	mux.HandleFunc("POST /jobs/{id}/stop", bearerAuth(jobServer.stopHandler))
+	mux.HandleFunc("GET /jobs/{id}/output", bearerAuth(jobServer.getOutputHandler))
+	mux.HandleFunc("GET /jobs/{id}", bearerAuth(jobServer.getStatusHandler))
 
-	return js
+	return jobServer
 }
 
 // ServeHTTP allows the job Server to be used with http.Server.
