@@ -2,6 +2,7 @@ package jobserver
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"teleport-jobworker/pkg/job"
@@ -59,7 +60,7 @@ func responseJSON(w http.ResponseWriter, payload any, code int) {
 // responseError prepares the error response body as JSON.
 func responseError(w http.ResponseWriter, err error) {
 	// 404 Not Found, when a job is not in Manager's job table
-	if err == job.ErrNotFound {
+	if errors.Is(err, job.ErrNotFound) {
 		responseJSON(w, ErrorResponse{err.Error()}, http.StatusNotFound)
 		return
 	}

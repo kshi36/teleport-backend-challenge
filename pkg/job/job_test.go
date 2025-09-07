@@ -2,7 +2,6 @@ package job
 
 import (
 	"strings"
-	"sync"
 	"testing"
 	"testing/synctest"
 )
@@ -12,14 +11,8 @@ var longCmd = []string{"/bin/sleep", "2"}
 
 func TestRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var wg sync.WaitGroup
-
-		// this matches how run() is called in (*Manager).Start()
 		job := newJob(shortCmd[0], shortCmd[1:])
-		wg.Go(func() {
-			job.run()
-		})
-		wg.Wait()
+		job.run()
 
 		status := job.getStatus()
 		if status.State != Running {
@@ -45,13 +38,8 @@ func TestRun(t *testing.T) {
 
 func TestStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var wg sync.WaitGroup
-
 		job := newJob(longCmd[0], longCmd[1:])
-		wg.Go(func() {
-			job.run()
-		})
-		wg.Wait()
+		job.run()
 
 		status := job.getStatus()
 		if status.State != Running {
@@ -76,13 +64,8 @@ func TestStop(t *testing.T) {
 
 func TestStopAfterCompleted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var wg sync.WaitGroup
-
 		job := newJob(longCmd[0], longCmd[1:])
-		wg.Go(func() {
-			job.run()
-		})
-		wg.Wait()
+		job.run()
 
 		status := job.getStatus()
 		if status.State != Running {

@@ -3,7 +3,6 @@ package job
 import (
 	"context"
 	"testing"
-	"testing/synctest"
 )
 
 var invalidCmd = []string{"/invalid/cmd", "I am invalid"}
@@ -17,39 +16,33 @@ func initManagerContext(role string) (*Manager, context.Context) {
 }
 
 func TestInvalidJobID(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		m, ctx := initManagerContext(Admin)
+	m, ctx := initManagerContext(Admin)
 
-		_, err := m.GetStatus(ctx, "dummy_12345")
-		if err != ErrNotFound {
-			t.Errorf("GetStatus() expected error:  %s, got: %s", ErrNotFound, err.Error())
-		}
+	_, err := m.GetStatus(ctx, "dummy_12345")
+	if err != ErrNotFound {
+		t.Errorf("GetStatus() expected error:  %s, got: %s", ErrNotFound, err.Error())
+	}
 
-		_, _, err = m.GetOutput(ctx, "dummy_12345")
-		if err != ErrNotFound {
-			t.Errorf("GetOutput() expected error: %s, got: %s", ErrNotFound, err.Error())
-		}
-	})
+	_, _, err = m.GetOutput(ctx, "dummy_12345")
+	if err != ErrNotFound {
+		t.Errorf("GetOutput() expected error: %s, got: %s", ErrNotFound, err.Error())
+	}
 }
 
 func TestUnauthorized(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		m, ctx := initManagerContext(Admin)
-		jobID := m.Start(ctx, shortCmd[0], shortCmd[1:])
+	m, ctx := initManagerContext(Admin)
+	jobID := m.Start(ctx, shortCmd[0], shortCmd[1:])
 
-		synctest.Wait()
+	// get status with wrong user; user should not see the job
+	newCtx := WithUserInfo(context.Background(), "falsedummy", User)
+	_, err := m.GetStatus(newCtx, jobID)
+	if err != ErrNotFound {
+		t.Errorf("GetStatus() expected error: %s: %s", ErrNotFound, err.Error())
+	}
 
-		// get status with wrong user; user should not see the job
-		newCtx := WithUserInfo(context.Background(), "falsedummy", User)
-		_, err := m.GetStatus(newCtx, jobID)
-		if err != ErrNotFound {
-			t.Errorf("GetStatus() expected error: %s: %s", ErrNotFound, err.Error())
-		}
-
-		// get status with right user
-		_, err = m.GetStatus(ctx, jobID)
-		if err != nil {
-			t.Errorf("GetStatus() error: %s", err.Error())
-		}
-	})
+	// get status with right user
+	_, err = m.GetStatus(ctx, jobID)
+	if err != nil {
+		t.Errorf("GetStatus() error: %s", err.Error())
+	}
 }

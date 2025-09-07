@@ -41,12 +41,15 @@ func initTestServer(t *testing.T) (*httptest.Server, string) {
 	}
 	ts.StartTLS()
 
+	t.Cleanup(func() {
+		ts.Close()
+	})
+
 	return ts, id
 }
 
 func TestStartHandler(t *testing.T) {
 	ts, _ := initTestServer(t)
-	defer ts.Close()
 
 	shortCmd := `{"program":"/bin/echo","args":["hello world"]}`
 	request, _ := http.NewRequest("POST", ts.URL+"/jobs/start", bytes.NewBufferString(shortCmd))
@@ -60,12 +63,11 @@ func TestStartHandler(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Errorf("startHandler() expected %d, got %d", http.StatusCreated, response.StatusCode)
 	}
-	defer response.Body.Close()
+	response.Body.Close()
 }
 
 func TestStopHandler(t *testing.T) {
 	ts, id := initTestServer(t)
-	defer ts.Close()
 
 	request, _ := http.NewRequest("POST", ts.URL+"/jobs/"+id+"/stop", nil)
 	request.Header.Set("Authorization", "Bearer "+user1)
@@ -78,12 +80,11 @@ func TestStopHandler(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Errorf("stopHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
 	}
-	defer response.Body.Close()
+	response.Body.Close()
 }
 
 func TestStatusHandler(t *testing.T) {
 	ts, id := initTestServer(t)
-	defer ts.Close()
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
 	request.Header.Set("Authorization", "Bearer "+user1)
@@ -111,7 +112,6 @@ func TestStatusHandler(t *testing.T) {
 
 func TestOutputHandler(t *testing.T) {
 	ts, id := initTestServer(t)
-	defer ts.Close()
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id+"/output", nil)
 	request.Header.Set("Authorization", "Bearer "+user1)
@@ -124,12 +124,11 @@ func TestOutputHandler(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Errorf("getOutputHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
 	}
-	defer response.Body.Close()
+	response.Body.Close()
 }
 
 func TestJobNotFound(t *testing.T) {
 	ts, _ := initTestServer(t)
-	defer ts.Close()
 
 	// GetStatus requestuest, with fake id of a job that doesn't exist
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/fake_id", nil)
@@ -158,7 +157,6 @@ func TestJobNotFound(t *testing.T) {
 
 func TestWrongUserNotFound(t *testing.T) {
 	ts, id := initTestServer(t)
-	defer ts.Close()
 
 	// GetStatus requestuest, with wrong user (user2)
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
@@ -187,7 +185,6 @@ func TestWrongUserNotFound(t *testing.T) {
 
 func TestUnauthorized(t *testing.T) {
 	ts, id := initTestServer(t)
-	defer ts.Close()
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
 	request.Header.Set("Authorization", "Bearer "+fakeuser)
@@ -200,5 +197,5 @@ func TestUnauthorized(t *testing.T) {
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Errorf("startHandler() expected %d, got %d", http.StatusUnauthorized, response.StatusCode)
 	}
-	defer response.Body.Close()
+	response.Body.Close()
 }
