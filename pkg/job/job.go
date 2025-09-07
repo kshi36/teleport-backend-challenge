@@ -21,8 +21,6 @@ const (
 	Stopped   = "stopped"
 )
 
-var ErrNotFound = errors.New("job not found")
-
 // Job is a Linux process started by the service.
 type Job struct {
 	ID     string

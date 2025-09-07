@@ -10,8 +10,7 @@ import (
 )
 
 func main() {
-	// for now, just use localhost, port 8443
-	addr := ":8443"
+	addr := jobserver.DefaultHost
 
 	// create new Manager to inject into job Server
 	manager := job.NewManager()
@@ -22,7 +21,7 @@ func main() {
 		Addr:    addr,
 		Handler: jobServer,
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13, // enforce TLS 1.3
+			MinVersion: tls.VersionTLS13,
 		},
 	}
 	log.Fatal(server.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"))

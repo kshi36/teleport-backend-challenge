@@ -26,10 +26,14 @@ func initTestServer(t *testing.T) (*httptest.Server, string) {
 	jobServer := NewServer(manager)
 
 	var id string
+	var err error
 	synctest.Test(t, func(t *testing.T) {
 		// pre-populate Manager with a dummy Job, ID to test endpoints
 		ctx := job.WithUserInfo(context.Background(), user1, job.User)
-		id = manager.Start(ctx, "/bin/echo", []string{"hello world"})
+		id, err = manager.Start(ctx, "/bin/echo", []string{"hello world"})
+		if err != nil {
+			t.Errorf("(*Manager).Start() error: %s", err)
+		}
 
 		// wait for dummy Job to be in "completed" state
 		synctest.Wait()
@@ -75,7 +79,7 @@ func TestStopHandler(t *testing.T) {
 
 	response, err := ts.Client().Do(request)
 	if err != nil {
-		t.Errorf("stopHandler() error: %s", err.Error())
+		t.Errorf("Do() error: %s", err.Error())
 	}
 	if response.StatusCode != http.StatusOK {
 		t.Errorf("stopHandler() expected %d, got %d", http.StatusOK, response.StatusCode)
@@ -130,7 +134,7 @@ func TestOutputHandler(t *testing.T) {
 func TestJobNotFound(t *testing.T) {
 	ts, _ := initTestServer(t)
 
-	// GetStatus requestuest, with fake id of a job that doesn't exist
+	// GetStatus request, with fake id of a job that doesn't exist
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/fake_id", nil)
 	request.Header.Set("Authorization", "Bearer "+user1)
 	request.Header.Set("Content-Type", "application/json")
@@ -158,7 +162,7 @@ func TestJobNotFound(t *testing.T) {
 func TestWrongUserNotFound(t *testing.T) {
 	ts, id := initTestServer(t)
 
-	// GetStatus requestuest, with wrong user (user2)
+	// GetStatus request, with wrong user (user2)
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
 	request.Header.Set("Authorization", "Bearer "+user2)
 	request.Header.Set("Content-Type", "application/json")

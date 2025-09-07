@@ -2,8 +2,12 @@ package job
 
 import (
 	"context"
+	"errors"
 	"sync"
 )
+
+var ErrNotFound = errors.New("job not found")
+var ErrUnauthorized = errors.New("unauthorized action, no user provided")
 
 // Manager roles
 const (
@@ -38,8 +42,11 @@ func NewManager() *Manager {
 }
 
 // Start creates a job and assigns a unique job ID.
-func (m *Manager) Start(ctx context.Context, program string, args []string) string {
-	userID, _ := getUserInfo(ctx)
+func (m *Manager) Start(ctx context.Context, program string, args []string) (string, error) {
+	userID, _, ok := getUserInfo(ctx)
+	if !ok {
+		return "", ErrUnauthorized
+	}
 
 	newJob := newJob(program, args)
 
@@ -49,7 +56,7 @@ func (m *Manager) Start(ctx context.Context, program string, args []string) stri
 
 	go newJob.run()
 
-	return newJob.ID
+	return newJob.ID, nil
 }
 
 // Stop kills the job of specified job ID.
@@ -85,7 +92,10 @@ func (m *Manager) GetOutput(ctx context.Context, jobID string) (stdout, stderr s
 
 // readJob retrieves a Job if the jobID exists in table and user has valid role.
 func (m *Manager) readJob(ctx context.Context, jobID string) (*Job, error) {
-	userID, role := getUserInfo(ctx)
+	userID, role, ok := getUserInfo(ctx)
+	if !ok {
+		return nil, ErrUnauthorized
+	}
 
 	m.mutex.RLock()
 	record := m.jobs[jobID]
@@ -106,7 +116,7 @@ func WithUserInfo(ctx context.Context, id, role string) context.Context {
 }
 
 // getUserInfo retrieves user information data (userID and role) from context.
-func getUserInfo(ctx context.Context) (userID, role string) {
-	userInfo, _ := ctx.Value(userContextKey{}).(*userInfo)
-	return userInfo.ID, userInfo.Role
+func getUserInfo(ctx context.Context) (userID, role string, ok bool) {
+	userInfo, ok := ctx.Value(userContextKey{}).(*userInfo)
+	return userInfo.ID, userInfo.Role, ok
 }

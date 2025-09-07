@@ -64,6 +64,10 @@ func responseError(w http.ResponseWriter, err error) {
 		responseJSON(w, ErrorResponse{err.Error()}, http.StatusNotFound)
 		return
 	}
+	if errors.Is(err, job.ErrUnauthorized) {
+		responseJSON(w, ErrorResponse{err.Error()}, http.StatusUnauthorized)
+		return
+	}
 	// 500 Internal Server Error, for any issues with internal job functions
 	responseJSON(w, ErrorResponse{err.Error()}, http.StatusInternalServerError)
 }
@@ -76,7 +80,11 @@ func (s *Server) startHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := s.manager.Start(r.Context(), startRequest.Program, startRequest.Args)
+	jobID, err := s.manager.Start(r.Context(), startRequest.Program, startRequest.Args)
+	if err != nil {
+		responseError(w, err)
+		return
+	}
 
 	responseJSON(w, StartResponse{ID: jobID}, http.StatusCreated)
 }

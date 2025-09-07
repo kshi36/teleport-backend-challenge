@@ -8,6 +8,7 @@ import (
 
 var shortCmd = []string{"/bin/echo", "hello world"}
 var longCmd = []string{"/bin/sleep", "2"}
+var invalidCmd = []string{"/invalid/cmd", "I am invalid"}
 
 func TestRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -91,18 +92,13 @@ func TestStopAfterCompleted(t *testing.T) {
 
 func TestStartInvalidCmd(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		m, ctx := initManagerContext(Admin)
-		jobID := m.Start(ctx, invalidCmd[0], invalidCmd[1:])
+		job := newJob(invalidCmd[0], invalidCmd[1:])
+		job.run()
 
-		synctest.Wait()
-
-		status, err := m.GetStatus(ctx, jobID)
-		if err != nil {
-			t.Errorf("GetStatus() error: %s", err.Error())
-		}
+		status := job.getStatus()
 
 		if status.State != Failed {
-			t.Errorf("GetStatus() expected failed , got %v", status.State)
+			t.Errorf("getStatus() expected failed , got %v", status.State)
 		}
 	})
 }

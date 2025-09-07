@@ -7,6 +7,8 @@ import (
 	"teleport-jobworker/pkg/job"
 )
 
+const DefaultHost = ":8443"
+
 // Server provides an HTTP mux and job.Manager for job API calls.
 type Server struct {
 	mux     *http.ServeMux
