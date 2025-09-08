@@ -42,7 +42,7 @@ type OutputResponse struct {
 	Error  *string `json:"error"`
 }
 
-// ErrorResponse defines error response body for status codes: 401, 404, 500.
+// ErrorResponse defines error response body for status codes: 400, 401, 404, 500.
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
@@ -59,7 +59,6 @@ func responseJSON(w http.ResponseWriter, payload any, code int) {
 
 // responseError prepares the error response body as JSON.
 func responseError(w http.ResponseWriter, err error) {
-	// 404 Not Found, when a job is not in Manager's job table
 	if errors.Is(err, job.ErrNotFound) {
 		responseJSON(w, ErrorResponse{err.Error()}, http.StatusNotFound)
 		return
@@ -68,7 +67,6 @@ func responseError(w http.ResponseWriter, err error) {
 		responseJSON(w, ErrorResponse{err.Error()}, http.StatusUnauthorized)
 		return
 	}
-	// 500 Internal Server Error, for any issues with internal job functions
 	responseJSON(w, ErrorResponse{err.Error()}, http.StatusInternalServerError)
 }
 
@@ -89,7 +87,7 @@ func (s *Server) startHandler(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, StartResponse{ID: jobID}, http.StatusCreated)
 }
 
-// stopHandler handles HTTPS reqs to POST /jobs/{id}/stop
+// stopHandler handles HTTPS requests to POST /jobs/{id}/stop
 func (s *Server) stopHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -102,7 +100,7 @@ func (s *Server) stopHandler(w http.ResponseWriter, r *http.Request) {
 	responseJSON(w, StopResponse{ID: id}, http.StatusOK)
 }
 
-// getStatusHandler handles HTTPS reqs to GET /jobs/{id}
+// getStatusHandler handles HTTPS requests to GET /jobs/{id}
 func (s *Server) getStatusHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -119,7 +117,7 @@ func (s *Server) getStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusOK)
 }
 
-// getOutputHandler handles HTTPS reqs to GET /jobs/{id}/output
+// getOutputHandler handles HTTPS requests to GET /jobs/{id}/output
 func (s *Server) getOutputHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 

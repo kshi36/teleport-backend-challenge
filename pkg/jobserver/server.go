@@ -7,9 +7,9 @@ import (
 	"teleport-jobworker/pkg/job"
 )
 
-const DefaultHost = ":8443"
+const DefaultHost = "localhost:8443"
 
-// Server provides an HTTP mux and job.Manager for job API calls.
+// Server provides a mux with API endpoints that wrap job.Manager library calls.
 type Server struct {
 	mux     *http.ServeMux
 	manager *job.Manager

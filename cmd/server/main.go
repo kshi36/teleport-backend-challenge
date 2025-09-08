@@ -17,12 +17,19 @@ func main() {
 
 	// create job Server with mux to use with HTTPS
 	jobServer := jobserver.NewServer(manager)
+
+	cert, err := jobserver.LoadTLSCertificate()
+	if err != nil {
+		log.Fatal("failed to load TLS certificate")
+	}
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: jobServer,
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13,
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{cert},
 		},
 	}
-	log.Fatal(server.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"))
+	log.Fatal(server.ListenAndServeTLS("", ""))
 }

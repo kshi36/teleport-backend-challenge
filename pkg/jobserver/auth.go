@@ -19,7 +19,6 @@ func bearerAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 
-		// eliminate whitespace and observe header only of form Bearer <token>
 		authHeaderFields := strings.Fields(authHeader)
 		if len(authHeaderFields) != 2 || !strings.EqualFold(authHeaderFields[0], "Bearer") {
 			responseJSON(w, ErrorResponse{"Unauthorized action"}, http.StatusUnauthorized)
@@ -33,7 +32,7 @@ func bearerAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// store token (as userID) and role in context for handlers
+		// store token (as userID) and role in context for use in Manager library calls
 		ctx := job.WithUserInfo(r.Context(), token, role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
