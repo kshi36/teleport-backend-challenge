@@ -28,7 +28,7 @@ type Client struct {
 }
 
 // NewClient configures an HTTP Client for communication with the job Server.
-func NewClient(URL string) (*Client, error) {
+func NewClient(url string) (*Client, error) {
 	// configure job Client to trust self-signed TLS certificate
 	certPool := x509.NewCertPool()
 	if ok := certPool.AppendCertsFromPEM(cert); !ok {
@@ -42,9 +42,8 @@ func NewClient(URL string) (*Client, error) {
 			},
 		}}
 
-	url := DefaultBaseURL
-	if URL != "" {
-		url = URL
+	if url == "" {
+		url = DefaultBaseURL
 	}
 	return &Client{Client: client, URL: url}, nil
 }
