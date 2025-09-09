@@ -10,6 +10,15 @@ import (
 	"strconv"
 )
 
+// For the prototype, pre-generated Bearer tokens will be assigned to specific userIDs.
+// In the future, tokens will be auto-generated and assigned from the server,
+// and stored securely.
+var userTokens = map[string]string{ // userID -> token
+	"user1":  "user1_token",
+	"user2":  "user2_token",
+	"admin1": "admin1_token",
+}
+
 const (
 	DefaultBaseURL            = "https://localhost:8443"
 	messageJobStarted         = "Job started with ID %s\n"
@@ -63,7 +72,7 @@ func (c *Client) StartJob(user, program string, args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+user)
+	request.Header.Set("Authorization", "Bearer "+userTokens[user])
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := c.Do(request)
@@ -93,7 +102,7 @@ func (c *Client) StopJob(user, jobID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+user)
+	request.Header.Set("Authorization", "Bearer "+userTokens[user])
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := c.Do(request)
@@ -125,7 +134,7 @@ func (c *Client) GetJobStatus(user, jobID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+user)
+	request.Header.Set("Authorization", "Bearer "+userTokens[user])
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := c.Do(request)
@@ -163,7 +172,7 @@ func (c *Client) GetJobOutput(user, jobID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+user)
+	request.Header.Set("Authorization", "Bearer "+userTokens[user])
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := c.Do(request)

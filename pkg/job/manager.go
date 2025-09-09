@@ -30,8 +30,8 @@ type jobRecord struct {
 // Context includes user ID and role for use with Manager functions.
 type userContextKey struct{}
 type userInfo struct {
-	ID   string
-	Role string
+	id   string
+	role string
 }
 
 // NewManager creates a new Manager with empty job table.
@@ -112,11 +112,11 @@ func (m *Manager) readJob(ctx context.Context, jobID string) (*Job, error) {
 
 // WithUserInfo adds user information data (userID and role) into the context.
 func WithUserInfo(ctx context.Context, id, role string) context.Context {
-	return context.WithValue(ctx, userContextKey{}, &userInfo{ID: id, Role: role})
+	return context.WithValue(ctx, userContextKey{}, &userInfo{id, role})
 }
 
 // getUserInfo retrieves user information data (userID and role) from context.
 func getUserInfo(ctx context.Context) (userID, role string, ok bool) {
 	userInfo, ok := ctx.Value(userContextKey{}).(*userInfo)
-	return userInfo.ID, userInfo.Role, ok
+	return userInfo.id, userInfo.role, ok
 }
