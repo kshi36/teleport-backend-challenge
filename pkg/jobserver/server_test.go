@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	user1    = "user1"
-	user2    = "user2"
-	fakeuser = "fakeuser"
+	user1token    = "user1_token"
+	user2token    = "user2_token"
+	fakeusertoken = "fakeuser_token"
 )
 
 // initTestServer spins up a test HTTPS API server and pre-generated dummy ID for testing.
@@ -29,7 +29,7 @@ func initTestServer(t *testing.T) (*httptest.Server, string) {
 	var err error
 	synctest.Test(t, func(t *testing.T) {
 		// pre-populate Manager with a dummy Job, ID to test endpoints
-		ctx := job.WithUserInfo(context.Background(), user1, job.User)
+		ctx := job.WithUserInfo(context.Background(), "user1", job.User)
 		id, err = manager.Start(ctx, "/bin/echo", []string{"hello world"})
 		if err != nil {
 			t.Errorf("(*Manager).Start() error: %s", err)
@@ -57,7 +57,7 @@ func TestStartHandler(t *testing.T) {
 
 	shortCmd := `{"program":"/bin/echo","args":["hello world"]}`
 	request, _ := http.NewRequest("POST", ts.URL+"/jobs/start", bytes.NewBufferString(shortCmd))
-	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Authorization", "Bearer "+user1token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -74,7 +74,7 @@ func TestStopHandler(t *testing.T) {
 	ts, id := initTestServer(t)
 
 	request, _ := http.NewRequest("POST", ts.URL+"/jobs/"+id+"/stop", nil)
-	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Authorization", "Bearer "+user1token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -91,7 +91,7 @@ func TestStatusHandler(t *testing.T) {
 	ts, id := initTestServer(t)
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
-	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Authorization", "Bearer "+user1token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -118,7 +118,7 @@ func TestOutputHandler(t *testing.T) {
 	ts, id := initTestServer(t)
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id+"/output", nil)
-	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Authorization", "Bearer "+user1token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -136,7 +136,7 @@ func TestJobNotFound(t *testing.T) {
 
 	// GetStatus request, with fake id of a job that doesn't exist
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/fake_id", nil)
-	request.Header.Set("Authorization", "Bearer "+user1)
+	request.Header.Set("Authorization", "Bearer "+user1token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -162,9 +162,9 @@ func TestJobNotFound(t *testing.T) {
 func TestWrongUserNotFound(t *testing.T) {
 	ts, id := initTestServer(t)
 
-	// GetStatus request, with wrong user (user2)
+	// GetStatus request, with wrong token (user2token)
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
-	request.Header.Set("Authorization", "Bearer "+user2)
+	request.Header.Set("Authorization", "Bearer "+user2token)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
@@ -191,7 +191,7 @@ func TestUnauthorized(t *testing.T) {
 	ts, id := initTestServer(t)
 
 	request, _ := http.NewRequest("GET", ts.URL+"/jobs/"+id, nil)
-	request.Header.Set("Authorization", "Bearer "+fakeuser)
+	request.Header.Set("Authorization", "Bearer "+fakeusertoken)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := ts.Client().Do(request)
