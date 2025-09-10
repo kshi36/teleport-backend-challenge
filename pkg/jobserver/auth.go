@@ -6,6 +6,8 @@ import (
 	"teleport-jobworker/pkg/job"
 )
 
+var ErrBadAuthentication = "unauthorized action"
+
 // For the prototype, the server will contain a static store of valid Bearer tokens.
 // In the future, tokens will be auto-generated (eg. JWT), and stored securely.
 var validTokens = map[string]tokenClaims{
@@ -27,14 +29,14 @@ func bearerAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		authHeaderFields := strings.Fields(authHeader)
 		if len(authHeaderFields) != 2 || !strings.EqualFold(authHeaderFields[0], "Bearer") {
-			responseJSON(w, ErrorResponse{"Unauthorized action"}, http.StatusUnauthorized)
+			responseJSON(w, ErrorResponse{ErrBadAuthentication}, http.StatusUnauthorized)
 			return
 		}
 
 		token := authHeaderFields[1]
 		claims, ok := validTokens[token]
 		if !ok {
-			responseJSON(w, ErrorResponse{"Unauthorized action"}, http.StatusUnauthorized)
+			responseJSON(w, ErrorResponse{ErrBadAuthentication}, http.StatusUnauthorized)
 			return
 		}
 

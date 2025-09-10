@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"teleport-jobworker/pkg/jobserver"
 
 	"github.com/spf13/cobra"
@@ -15,22 +16,34 @@ var statusCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error starting job: incorrect number of args")
+			fmt.Fprint(cmd.ErrOrStderr(), errIncorrectArgs)
 			return
 		}
 
 		jobID := args[0]
 
-		client, err := jobserver.NewClient("")
+		client, err := jobserver.NewClient()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error starting job: %v", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v", err)
 			return
 		}
-		message, err := client.GetJobStatus(user, jobID)
+
+		response, err := client.GetJobStatus(user, jobID)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error getting job status: %v", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v", err)
 			return
 		}
-		fmt.Fprint(cmd.OutOrStdout(), message)
+
+		if response.Error != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), messageJobError, *response.Error)
+			return
+		}
+
+		exitCode := ""
+		if response.ExitCode != nil {
+			exitCode = strconv.Itoa(*response.ExitCode)
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), messageJobStatus, response.ID, response.Status, exitCode)
 	},
 }

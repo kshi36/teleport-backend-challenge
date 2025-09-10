@@ -7,37 +7,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 )
 
-// For the prototype, pre-generated Bearer tokens will be assigned to specific userIDs.
-// In the future, tokens will be auto-generated and assigned from the server,
-// and stored securely.
-var userTokens = map[string]string{ // userID -> token
-	"user1":  "user1_token",
-	"user2":  "user2_token",
-	"admin1": "admin1_token",
-}
-
-const (
-	DefaultBaseURL            = "https://localhost:8443"
-	messageJobStarted         = "Job started with ID %s\n"
-	messageJobStopped         = "Job stopped for ID %s\n"
-	messageJobStatus          = "Job status for ID %s\nStatus: %s\nExit code: %s\n"
-	messageJobOutput          = "Job output for ID %s\nstdout:\n%s\nstderr:\n%s\n"
-	messageJobNotFound        = "Job not found for ID %s\n"
-	messageUnauthorizedAction = "User is not authorized to perform the action\n"
-	messageInternalError      = "Jobserver internal error\n"
-)
+const DefaultBaseURL = "https://localhost:8443"
 
 // Client sends job management requests to the HTTPS API server.
 type Client struct {
-	*http.Client
-	URL string
+	client *http.Client
+	url    string
 }
 
 // NewClient configures an HTTP Client for communication with the job Server.
-func NewClient(url string) (*Client, error) {
+func NewClient() (*Client, error) {
 	// configure job Client to trust self-signed TLS certificate
 	certPool := x509.NewCertPool()
 	if ok := certPool.AppendCertsFromPEM(cert); !ok {
@@ -51,151 +32,112 @@ func NewClient(url string) (*Client, error) {
 			},
 		}}
 
-	if url == "" {
-		url = DefaultBaseURL
-	}
-	return &Client{Client: client, URL: url}, nil
+	return &Client{client, DefaultBaseURL}, nil
+}
+
+// userToToken simply appends a "_token" string to a userID to generate a Bearer token.
+// In the future, tokens will be auto-generated (eg. JWT) according to user info.
+func userToToken(user string) string {
+	return user + "_token"
 }
 
 // StartJob creates an HTTP request and parses response for the /jobs/start endpoint.
-func (c *Client) StartJob(user, program string, args []string) (string, error) {
+func (c *Client) StartJob(user, program string, args []string) (*StartResponse, error) {
 	var requestBuf bytes.Buffer
 	requestBody := StartRequest{
 		Program: program,
 		Args:    args,
 	}
 	if err := json.NewEncoder(&requestBuf).Encode(requestBody); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	request, err := http.NewRequest("POST", c.URL+"/jobs/start", &requestBuf)
+	request, err := http.NewRequest("POST", c.url+"/jobs/start", &requestBuf)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+userTokens[user])
+	request.Header.Set("Authorization", "Bearer "+userToToken(user))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := c.Do(request)
+	response, err := c.client.Do(request)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer response.Body.Close()
 
-	switch response.StatusCode {
-	case http.StatusCreated:
-		var startResponse StartResponse
-		err = json.NewDecoder(response.Body).Decode(&startResponse)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf(messageJobStarted, startResponse.ID), nil
-	case http.StatusUnauthorized:
-		return messageUnauthorizedAction, nil
-	default: // coalesce "BadRequest" into "InternalServerError"
-		return messageInternalError, nil
+	var startResponse StartResponse
+	err = json.NewDecoder(response.Body).Decode(&startResponse)
+	if err != nil {
+		return nil, err
 	}
+	return &startResponse, nil
 }
 
 // StopJob creates an HTTP request and parses response for the /jobs/{id}/stop endpoint.
-func (c *Client) StopJob(user, jobID string) (string, error) {
-	request, err := http.NewRequest("POST", c.URL+"/jobs/"+jobID+"/stop", nil)
+func (c *Client) StopJob(user, jobID string) (*StopResponse, error) {
+	request, err := http.NewRequest("POST", c.url+"/jobs/"+jobID+"/stop", nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+userTokens[user])
+	request.Header.Set("Authorization", "Bearer "+userToToken(user))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := c.Do(request)
+	response, err := c.client.Do(request)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer response.Body.Close()
 
-	switch response.StatusCode {
-	case http.StatusOK:
-		var stopResponse StopResponse
-		err = json.NewDecoder(response.Body).Decode(&stopResponse)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf(messageJobStopped, stopResponse.ID), nil
-	case http.StatusNotFound:
-		return fmt.Sprintf(messageJobNotFound, jobID), nil
-	case http.StatusUnauthorized:
-		return messageUnauthorizedAction, nil
-	default:
-		return messageInternalError, nil
+	var stopResponse StopResponse
+	err = json.NewDecoder(response.Body).Decode(&stopResponse)
+	if err != nil {
+		return nil, err
 	}
+	return &stopResponse, nil
 }
 
 // GetJobStatus creates an HTTP request and parses response for the /jobs/{id} endpoint.
-func (c *Client) GetJobStatus(user, jobID string) (string, error) {
-	request, err := http.NewRequest("GET", c.URL+"/jobs/"+jobID, nil)
+func (c *Client) GetJobStatus(user, jobID string) (*StatusResponse, error) {
+	request, err := http.NewRequest("GET", c.url+"/jobs/"+jobID, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+userTokens[user])
+	request.Header.Set("Authorization", "Bearer "+userToToken(user))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := c.Do(request)
+	response, err := c.client.Do(request)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer response.Body.Close()
 
-	switch response.StatusCode {
-	case http.StatusOK:
-		var statusResponse StatusResponse
-		err = json.NewDecoder(response.Body).Decode(&statusResponse)
-		if err != nil {
-			return "", err
-		}
-
-		exitCode := ""
-		if statusResponse.ExitCode != nil {
-			exitCode = strconv.Itoa(*statusResponse.ExitCode)
-		}
-		return fmt.Sprintf(messageJobStatus,
-			statusResponse.ID, statusResponse.Status, exitCode), nil
-	case http.StatusNotFound:
-		return fmt.Sprintf(messageJobNotFound, jobID), nil
-	case http.StatusUnauthorized:
-		return messageUnauthorizedAction, nil
-	default:
-		return messageInternalError, nil
+	var statusResponse StatusResponse
+	err = json.NewDecoder(response.Body).Decode(&statusResponse)
+	if err != nil {
+		return nil, err
 	}
+	return &statusResponse, nil
 }
 
 // GetJobOutput creates an HTTP request and parses response for the /jobs/{id}/output endpoint.
-func (c *Client) GetJobOutput(user, jobID string) (string, error) {
-	request, err := http.NewRequest("GET", c.URL+"/jobs/"+jobID+"/output", nil)
+func (c *Client) GetJobOutput(user, jobID string) (*OutputResponse, error) {
+	request, err := http.NewRequest("GET", c.url+"/jobs/"+jobID+"/output", nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+userTokens[user])
+	request.Header.Set("Authorization", "Bearer "+userToToken(user))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := c.Do(request)
+	response, err := c.client.Do(request)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer response.Body.Close()
 
-	switch response.StatusCode {
-	case http.StatusOK:
-		var outputResponse OutputResponse
-		err = json.NewDecoder(response.Body).Decode(&outputResponse)
-		if err != nil {
-			return "", err
-		}
-
-		return fmt.Sprintf(messageJobOutput,
-			outputResponse.ID, outputResponse.Stdout, outputResponse.Stderr), nil
-	case http.StatusNotFound:
-		return fmt.Sprintf(messageJobNotFound, jobID), nil
-	case http.StatusUnauthorized:
-		return messageUnauthorizedAction, nil
-	default:
-		return messageInternalError, nil
+	var outputResponse OutputResponse
+	err = json.NewDecoder(response.Body).Decode(&outputResponse)
+	if err != nil {
+		return nil, err
 	}
+	return &outputResponse, nil
 }

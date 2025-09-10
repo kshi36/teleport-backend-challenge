@@ -7,6 +7,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	errIncorrectArgs  = "Error: incorrect number of args"
+	messageJobStarted = "Job started with ID %s\n"
+	messageJobStopped = "Job stopped for ID %s\n"
+	messageJobStatus  = "Job status for ID %s\nStatus: %s\nExit code: %s\n"
+	messageJobOutput  = "Job output for ID %s\nstdout:\n%s\nstderr:\n%s\n"
+	messageJobError   = "Error with job: %s\n"
+)
+
 var user string
 
 var rootCmd = &cobra.Command{

@@ -15,22 +15,29 @@ var outputCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error starting job: incorrect number of args")
+			fmt.Fprint(cmd.ErrOrStderr(), errIncorrectArgs)
 			return
 		}
 
 		jobID := args[0]
 
-		client, err := jobserver.NewClient("")
+		client, err := jobserver.NewClient()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error starting job: %v", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v", err)
 			return
 		}
-		message, err := client.GetJobOutput(user, jobID)
+
+		response, err := client.GetJobOutput(user, jobID)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error getting job output: %v", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v", err)
 			return
 		}
-		fmt.Fprint(cmd.OutOrStdout(), message)
+
+		if response.Error != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), messageJobError, *response.Error)
+			return
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), messageJobOutput, response.ID, response.Stdout, response.Stderr)
 	},
 }

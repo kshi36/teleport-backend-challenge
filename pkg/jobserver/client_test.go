@@ -2,68 +2,62 @@ package jobserver
 
 import (
 	"strings"
+	"teleport-jobworker/pkg/job"
 	"testing"
-)
-
-const (
-	jobStarted       = "Job started"
-	jobStatus        = "Job status"
-	jobNotFound      = "Job not found"
-	userUnauthorized = "User is not authorized"
 )
 
 func TestStartJob(t *testing.T) {
 	ts, _ := initTestServer(t)
-	client := &Client{Client: ts.Client(), URL: ts.URL}
+	client := &Client{ts.Client(), ts.URL}
 
-	message, err := client.StartJob("user1", "/bin/echo", []string{"hello world"})
+	response, err := client.StartJob("user1", "/bin/echo", []string{"hello world"})
 	if err != nil {
 		t.Errorf("StartJob() error: %s", err.Error())
 	}
 
-	if !strings.Contains(message, jobStarted) {
-		t.Errorf("StartJob() expected %s, got %s", jobStarted, message)
+	if response.Error != nil {
+		t.Errorf("StartJob() job error: %s", *response.Error)
 	}
 }
 
 func TestGetJobStatus(t *testing.T) {
 	ts, id := initTestServer(t)
-	client := &Client{Client: ts.Client(), URL: ts.URL}
+	client := &Client{ts.Client(), ts.URL}
 
-	message, err := client.GetJobStatus("user1", id)
+	response, err := client.GetJobStatus("user1", id)
 	if err != nil {
 		t.Errorf("GetJobStatus() error: %s", err.Error())
 	}
 
-	if !strings.Contains(message, jobStatus) {
-		t.Errorf("GetJobStatus() expected %s, got %s", jobStatus, message)
+	if response.Error != nil {
+		t.Errorf("GetJobStatus() job error: %s", *response.Error)
 	}
 }
 
 func TestGetJobStatusNotFound(t *testing.T) {
 	ts, _ := initTestServer(t)
-	client := &Client{Client: ts.Client(), URL: ts.URL}
+	client := &Client{ts.Client(), ts.URL}
 
-	message, err := client.GetJobStatus("user1", "fake_id")
+	response, err := client.GetJobStatus("user1", "fake_id")
 	if err != nil {
 		t.Errorf("GetJobStatus() error: %s", err.Error())
 	}
 
-	if !strings.Contains(message, jobNotFound) {
-		t.Errorf("GetJobStatus() expected %s, got %s", jobNotFound, message)
+	if response.Error == nil || !strings.Contains(*response.Error, job.ErrNotFound.Error()) {
+		t.Errorf("GetJobStatus() expected %s, got %s", job.ErrNotFound.Error(), *response.Error)
 	}
 }
 
 func TestStartJobUnauthorized(t *testing.T) {
 	ts, _ := initTestServer(t)
-	client := &Client{Client: ts.Client(), URL: ts.URL}
+	client := &Client{ts.Client(), ts.URL}
 
-	message, err := client.StartJob("fakeuser", "/bin/echo", []string{"hello world"})
+	response, err := client.StartJob("fakeuser", "/bin/echo", []string{"hello world"})
 	if err != nil {
 		t.Errorf("StartJob() error: %s", err.Error())
 	}
 
-	if !strings.Contains(message, userUnauthorized) {
-		t.Errorf("StartJob() expected %s, got %s", jobStarted, message)
+	if response.Error == nil || !strings.Contains(*response.Error, ErrBadAuthentication) {
+		t.Errorf("StartJob() expected %s, got %s", job.ErrUnauthorized.Error(), *response.Error)
 	}
 }
