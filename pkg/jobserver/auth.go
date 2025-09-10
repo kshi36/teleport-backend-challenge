@@ -6,20 +6,12 @@ import (
 	"teleport-jobworker/pkg/job"
 )
 
-var ErrBadAuthentication = "unauthorized action"
-
-// For the prototype, the server will contain a static store of valid Bearer tokens.
+// Pre-generated Bearer tokens are equivalent to userID, and provide a role: user, admin.
 // In the future, tokens will be auto-generated (eg. JWT), and stored securely.
-var validTokens = map[string]tokenClaims{
-	"user1_token":  {"user1", job.User},
-	"user2_token":  {"user2", job.User},
-	"admin1_token": {"admin1", job.Admin},
-}
-
-// tokenClaims contains user information to be used in job library calls.
-type tokenClaims struct {
-	userId string
-	role   string
+var validTokens = map[string]string{
+	"user1":  job.User,
+	"user2":  job.User,
+	"admin1": job.Admin,
 }
 
 // bearerAuth inspects the Authorization: Bearer header and manages authentication.
@@ -29,19 +21,19 @@ func bearerAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		authHeaderFields := strings.Fields(authHeader)
 		if len(authHeaderFields) != 2 || !strings.EqualFold(authHeaderFields[0], "Bearer") {
-			responseJSON(w, ErrorResponse{ErrBadAuthentication}, http.StatusUnauthorized)
+			responseJSON(w, ErrorResponse{"Unauthorized action"}, http.StatusUnauthorized)
 			return
 		}
 
 		token := authHeaderFields[1]
-		claims, ok := validTokens[token]
+		role, ok := validTokens[token]
 		if !ok {
-			responseJSON(w, ErrorResponse{ErrBadAuthentication}, http.StatusUnauthorized)
+			responseJSON(w, ErrorResponse{"Unauthorized action"}, http.StatusUnauthorized)
 			return
 		}
 
 		// store token (as userID) and role in context for use in Manager library calls
-		ctx := job.WithUserInfo(r.Context(), claims.userId, claims.role)
+		ctx := job.WithUserInfo(r.Context(), token, role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
